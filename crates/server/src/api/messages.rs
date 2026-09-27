@@ -6,9 +6,11 @@ use axum::response::IntoResponse;
 use axum::Json;
 use tokio::sync::broadcast;
 
-use pinemail_core::mail;
-use pinemail_core::models::{BulkIdsBody, BulkReadBody, Event, ListQuery, MarkReadBody, MessageDetail, MessageList};
-use pinemail_core::store::{NewMessage, Store};
+use serde::Deserialize;
+
+use postwire_core::mail;
+use postwire_core::models::{BulkIdsBody, BulkReadBody, Event, ListQuery, MarkReadBody, MessageDetail, MessageList};
+use postwire_core::store::{NewMessage, Store};
 
 use super::error::ApiError;
 
@@ -148,15 +150,25 @@ pub async fn get_attachment(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ExtractQuery {
+    pub regex: Option<String>,
+}
+
 /// Pulls likely OTP codes and links out of a message body — built for agents/tests
 /// that need to grab a verification code or magic link without writing their own regex.
 pub async fn get_extract(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<pinemail_core::mail::ExtractedSignals>, ApiError> {
+    Query(query): Query<ExtractQuery>,
+) -> Result<Json<postwire_core::mail::ExtractedSignals>, ApiError> {
     let raw = state.store.get_raw(&id)?.ok_or(ApiError::NotFound)?;
     let detail = mail::parse_detail(&raw).ok_or(ApiError::UnprocessableEntity("could not parse message"))?;
-    let signals = mail::extract_signals(detail.text_body.as_deref(), detail.html_body.as_deref());
+    let signals = mail::extract_signals_with_custom_regex(
+        detail.text_body.as_deref(),
+        detail.html_body.as_deref(),
+        query.regex.as_deref(),
+    );
     Ok(Json(signals))
 }
 
@@ -176,8 +188,8 @@ pub async fn get_analysis(
         .map(|h| h.value.as_str())
         .unwrap_or("");
 
-    let html = pinemail_core::analysis::analyze_html(detail.html_body.as_deref());
-    let spam = pinemail_core::analysis::analyze_spam(
+    let html = postwire_core::analysis::analyze_html(detail.html_body.as_deref());
+    let spam = postwire_core::analysis::analyze_spam(
         subject,
         detail.text_body.as_deref(),
         detail.html_body.as_deref(),
@@ -198,14 +210,14 @@ pub struct SendTestEmailBody {
 pub async fn send_test_email(
     State(state): State<AppState>,
     Json(body): Json<SendTestEmailBody>,
-) -> Result<Json<pinemail_core::models::MessageSummary>, ApiError> {
+) -> Result<Json<postwire_core::models::MessageSummary>, ApiError> {
     let to = body
         .to
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "you@example.com".to_string());
     let smtp_port: u16 = std::env::var("SMTP_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(1025);
-    let from = "Pine Mail <no-reply@pinemail.local>".to_string();
-    let subject = "✅ Test email from Pine Mail".to_string();
+    let from = "Postwire <no-reply@postwire.local>".to_string();
+    let subject = "✅ Test email from Postwire".to_string();
     let raw = build_test_email(&from, &to, &subject, smtp_port);
 
     let msg = NewMessage {
@@ -223,7 +235,7 @@ pub async fn send_test_email(
 }
 
 fn build_test_email(from: &str, to: &str, subject: &str, smtp_port: u16) -> Vec<u8> {
-    let boundary = "pinemail-test-boundary";
+    let boundary = "postwire-test-boundary";
     let date = chrono::Utc::now().to_rfc2822();
     format!(
         "Date: {date}\r\n\
@@ -236,13 +248,13 @@ fn build_test_email(from: &str, to: &str, subject: &str, smtp_port: u16) -> Vec<
          --{boundary}\r\n\
          Content-Type: text/plain; charset=\"utf-8\"\r\n\
          \r\n\
-         It works! This test email confirms Pine Mail is capturing SMTP traffic on port {smtp_port}.\r\n\
+         It works! This test email confirms Postwire is capturing SMTP traffic on port {smtp_port}.\r\n\
          \r\n\
          --{boundary}\r\n\
          Content-Type: text/html; charset=\"utf-8\"\r\n\
          \r\n\
          <html><body style=\"font-family:sans-serif\"><h2>✅ It works!</h2>\
-         <p>This test email confirms Pine Mail is capturing SMTP traffic on port <b>{smtp_port}</b>.</p>\
+         <p>This test email confirms Postwire is capturing SMTP traffic on port <b>{smtp_port}</b>.</p>\
          </body></html>\r\n\
          \r\n\
          --{boundary}--\r\n"
@@ -301,9 +313,9 @@ pub async fn wait_for_message(
             res = rx.recv() => {
                 match res {
                     Ok(Event::New(ref summary)) => {
-                        let to_match = query.to.as_deref().map_or(true, |t| summary.to.iter().any(|addr| addr.contains(t)));
-                        let from_match = query.from.as_deref().map_or(true, |f| summary.from.contains(f));
-                        let subject_match = query.subject.as_deref().map_or(true, |s| summary.subject.contains(s));
+                        let to_match = query.to.as_deref().is_none_or(|t| summary.to.iter().any(|addr| addr.contains(t)));
+                        let from_match = query.from.as_deref().is_none_or(|f| summary.from.contains(f));
+                        let subject_match = query.subject.as_deref().is_none_or(|s| summary.subject.contains(s));
                         let since_match = summary.received_at > since;
 
                         if to_match && from_match && subject_match && since_match {
@@ -348,4 +360,59 @@ pub async fn wait_for_message(
     }
 }
 
+#[derive(Deserialize)]
+pub struct ReplayPayload {
+    pub target_url: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ReplayResponse {
+    pub success: bool,
+    pub status: u16,
+    pub message: String,
+}
+
+pub async fn replay_message(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ReplayPayload>,
+) -> Result<Json<ReplayResponse>, ApiError> {
+    let summary = state.store.get_summary(&id)?.ok_or(ApiError::NotFound)?;
+    let raw = state.store.get_raw(&id)?.ok_or(ApiError::NotFound)?;
+    let detail = mail::parse_detail(&raw).ok_or(ApiError::UnprocessableEntity("could not parse message"))?;
+
+    if let Some(target) = body.target_url {
+        let client = reqwest::Client::new();
+        let payload = serde_json::json!({
+            "id": summary.id,
+            "from": summary.from,
+            "to": summary.to,
+            "subject": summary.subject,
+            "text": detail.text_body,
+            "html": detail.html_body,
+            "received_at": summary.received_at,
+        });
+
+        let res = client.post(&target).json(&payload).send().await;
+        match res {
+            Ok(resp) => Ok(Json(ReplayResponse {
+                success: resp.status().is_success(),
+                status: resp.status().as_u16(),
+                message: format!("Replayed email to {}", target),
+            })),
+            Err(e) => Ok(Json(ReplayResponse {
+                success: false,
+                status: 500,
+                message: format!("Failed to replay to {}: {}", target, e),
+            })),
+        }
+    } else {
+        let _ = state.tx.send(Event::New(summary));
+        Ok(Json(ReplayResponse {
+            success: true,
+            status: 200,
+            message: "Re-broadcasted email event over WebSocket".to_string(),
+        }))
+    }
+}
 

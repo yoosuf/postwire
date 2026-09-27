@@ -1,4 +1,4 @@
-# Pine Mail 🌲📬
+# Postwire 🌲📬
 
 A tiny, single-binary **SMTP & SMS catcher** for development environments — like Mailtrap or Mailpit, but written in Rust with a minimal footprint (~15MB image), structured as a monorepo, and built for agentic development: AI agents (and e2e tests) can discover, wait for, and extract data from captured emails and SMS messages via a REST API or an MCP server.
 
@@ -9,10 +9,10 @@ A tiny, single-binary **SMTP & SMS catcher** for development environments — li
 ## Monorepo Layout
 
 ```
-crates/core/    pinemail-core   — shared SQLite store, MIME parsing, HTML/spam analysis, signal extraction
-crates/server/  pinemail        — SMTP (1025) + HTTP API/UI (8025); what you deploy
-crates/mcp/     pinemail-mcp    — MCP stdio server exposing emails & SMS to AI agents
-apps/web/                       — React + Vite + TS frontend embedded into `pinemail`
+crates/core/    postwire-core   — shared SQLite store, MIME parsing, HTML/spam analysis, signal extraction
+crates/server/  postwire        — SMTP (1025) + HTTP API/UI (8025); what you deploy
+crates/mcp/     postwire-mcp    — MCP stdio server exposing emails & SMS to AI agents
+apps/web/                       — React + Vite + TS frontend embedded into `postwire`
 ```
 
 For full system architecture, sequence diagrams, database schemas, and design details, see [ARCHITECTURE.md](ARCHITECTURE.md).  
@@ -22,7 +22,7 @@ For runtime integration details for AI agents and test suites, see [AGENTS.md](A
 
 ## Feature Comparison
 
-| Feature | Pine Mail 🌲 | Mailhog | Mailpit | Mailtrap (SaaS) |
+| Feature | Postwire 🌲 | Mailhog | Mailpit | Mailtrap (SaaS) |
 |---|---|---|---|---|
 | Single Static Binary | ✅ (Rust, ~15MB) | ❌ (Go + deps) | ✅ (Go) | ❌ (Cloud SaaS only) |
 | **Dual Email & SMS Catcher** | ✅ **Built-in** | ❌ Email only | ❌ Email only | 🟡 Partial |
@@ -45,39 +45,39 @@ For runtime integration details for AI agents and test suites, see [AGENTS.md](A
 - **Search, Pagination & Bulk Actions**: multi-select grid with bulk mark read/unread, bulk delete, and paginated lazy-loading (50 items per page).
 - **Agentic Long-Polling**: `GET /api/wait` and `GET /api/sms/wait` long-poll server-side for incoming emails or SMS matching filters (`to`, `from`, `subject`, `body`, `since`).
 - **Signal Extraction Engine**: `GET /api/messages/:id/extract` and `GET /api/sms/:id/extract` automatically pull OTP codes (4–8 digits) and magic links out of captured emails and SMS bodies.
-- **14 MCP Agent Tools (`pinemail-mcp`)**: Model Context Protocol stdio server exposing 7 Email tools and 7 SMS tools directly to Claude Desktop, Copilot, Cursor, and autonomous test runners.
-- **SQLite Storage**: persistent SQLite storage (`/data/pinemail.db` or `:memory:`) with automatic FIFO pruning past `MAX_MESSAGES`.
+- **14 MCP Agent Tools (`postwire-mcp`)**: Model Context Protocol stdio server exposing 7 Email tools and 7 SMS tools directly to Claude Desktop, Copilot, Cursor, and autonomous test runners.
+- **SQLite Storage**: persistent SQLite storage (`/data/postwire.db` or `:memory:`) with automatic FIFO pruning past `MAX_MESSAGES`.
 - **Zero External Runtime Dependencies**: single binary with embedded frontend built via `rust-embed`.
 
 ---
 
 ## Installation & Distribution Methods
 
-Pine Mail provides official distribution packages and single static binaries for **macOS**, **Linux**, and **Windows**.
+Postwire provides official distribution packages and single static binaries for **macOS**, **Linux**, and **Windows**.
 
 ### 🍺 Homebrew (macOS & Linux)
 
-Install Pine Mail (both `pinemail` server binary and `pinemail-mcp` AI agent tool) via Homebrew from [`yoosuf/homebrew-tap`](https://github.com/yoosuf/homebrew-tap):
+Install Postwire from the canonical project and release assets in [`yoosuf/postwire`](https://github.com/yoosuf/postwire). The existing Homebrew formula remains available under its legacy `postwire` package/service name, while the project itself is now branded as Postwire and the release archives provide the new `postwire` commands.
 
 ```bash
 # Add the Homebrew tap and install
 brew tap yoosuf/tap
-brew install pinemail
+brew install postwire
 
 # Or install directly in a single command:
-brew install yoosuf/tap/pinemail
+brew install yoosuf/tap/postwire
 ```
 
 **Manage as a background service (macOS & Linux):**
 
 ```bash
-# Start Pine Mail as a background service (SMTP on :1025, Web UI & API on :8025)
-brew services start pinemail
+# Start Postwire as a background service (SMTP on :1025, Web UI & API on :8025)
+brew services start postwire
 
 # Check service status, stop, or restart
-brew services info pinemail
-brew services stop pinemail
-brew services restart pinemail
+brew services info postwire
+brew services stop postwire
+brew services restart postwire
 ```
 
 ---
@@ -88,12 +88,12 @@ Auto-detects OS and CPU architecture, downloads the latest binary release, and p
 
 **macOS & Linux (POSIX Shell):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yoosuf/pinemail/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/yoosuf/postwire/main/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/yoosuf/pinemail/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/yoosuf/postwire/main/install.ps1 | iex
 ```
 
 ---
@@ -102,16 +102,16 @@ iwr -useb https://raw.githubusercontent.com/yoosuf/pinemail/main/install.ps1 | i
 
 - **Debian / Ubuntu (`.deb`)**:
   ```bash
-  curl -LO https://github.com/yoosuf/pinemail/releases/latest/download/pinemail_amd64.deb
-  sudo dpkg -i pinemail_amd64.deb
+  curl -LO https://github.com/yoosuf/postwire/releases/latest/download/postwire_amd64.deb
+  sudo dpkg -i postwire_amd64.deb
   ```
 - **Fedora / RHEL / CentOS (`.rpm`)**:
   ```bash
-  sudo rpm -i https://github.com/yoosuf/pinemail/releases/latest/download/pinemail.x86_64.rpm
+  sudo rpm -i https://github.com/yoosuf/postwire/releases/latest/download/postwire.x86_64.rpm
   ```
 - **Arch Linux (AUR)**:
   ```bash
-  yay -S pinemail-bin
+  yay -S postwire-bin
   ```
 
 ---
@@ -120,31 +120,33 @@ iwr -useb https://raw.githubusercontent.com/yoosuf/pinemail/main/install.ps1 | i
 
 - **Scoop**:
   ```powershell
-  scoop bucket add pinemail https://github.com/yoosuf/scoop-bucket
-  scoop install pinemail
+  scoop bucket add postwire https://github.com/yoosuf/scoop-bucket
+  scoop install postwire
   ```
 - **Winget (Windows Package Manager)**:
   ```cmd
-  winget install PineMail.PineMail
+  winget install Postwire.Postwire
   ```
 - **Chocolatey**:
   ```cmd
-  choco install pinemail
+  choco install postwire
   ```
 
 ---
 
 ### 📦 Pre-Compiled GitHub Release Binaries
 
-Download standalone pre-built binaries from [GitHub Releases](https://github.com/yoosuf/pinemail/releases/latest):
+Download standalone pre-built binaries from [GitHub Releases](https://github.com/yoosuf/postwire/releases/latest):
 
 | Operating System | Architecture | Package File |
 |---|---|---|
-| **macOS** | Apple Silicon (`aarch64`) | `pinemail-v*-aarch64-apple-darwin.tar.gz` |
-| **macOS** | Intel (`x86_64`) | `pinemail-v*-x86_64-apple-darwin.tar.gz` |
-| **Linux** | x86_64 | `pinemail-v*-x86_64-unknown-linux-gnu.tar.gz` |
-| **Linux** | ARM64 (`aarch64`) | `pinemail-v*-aarch64-unknown-linux-gnu.tar.gz` |
-| **Windows** | x86_64 | `pinemail-v*-x86_64-pc-windows-msvc.zip` |
+| **macOS** | Apple Silicon (`aarch64`) | `postwire-v*-aarch64-apple-darwin.tar.gz` |
+| **macOS** | Intel (`x86_64`) | `postwire-v*-x86_64-apple-darwin.tar.gz` |
+| **Linux** | x86_64 | `postwire-v*-x86_64-unknown-linux-gnu.tar.gz` |
+| **Linux** | ARM64 (`aarch64`) | `postwire-v*-aarch64-unknown-linux-gnu.tar.gz` |
+| **Windows** | x86_64 | `postwire-v*-x86_64-pc-windows-msvc.zip` |
+
+Each archive also includes the legacy `postwire` and `postwire-mcp` command names.
 
 ---
 
@@ -153,7 +155,8 @@ Download standalone pre-built binaries from [GitHub Releases](https://github.com
 Install directly via `cargo`:
 
 ```bash
-cargo install --git https://github.com/yoosuf/pinemail pinemail-server pinemail-mcp
+cargo install --git https://github.com/yoosuf/postwire postwire-server --bin postwire
+cargo install --git https://github.com/yoosuf/postwire postwire-mcp --bin postwire-mcp
 ```
 
 ---
@@ -163,7 +166,7 @@ cargo install --git https://github.com/yoosuf/pinemail pinemail-server pinemail-
 Pull the published multi-arch image (`linux/amd64` + `linux/arm64`) from Docker Hub:
 
 ```bash
-docker run -d --name pinemail -p 1025:1025 -p 8025:8025 -v pinemail-data:/data yoosuf/pinemail:latest
+docker run -d --name postwire -p 1025:1025 -p 8025:8025 -v postwire-data:/data yoosuf/postwire:latest
 ```
 
 Or run via Docker Compose:
@@ -178,7 +181,7 @@ To run the MCP server against it:
 docker compose --profile mcp run --rm mcp
 ```
 
-**Docker Hub:** [`yoosuf/pinemail`](https://hub.docker.com/r/yoosuf/pinemail) — tags `latest` and `0.1.0`.
+**Docker Hub:** [`yoosuf/postwire`](https://hub.docker.com/r/yoosuf/postwire) — canonical Postwire image; legacy `yoosuf/postwire` tags remain available for compatibility.
 
 ---
 
@@ -227,7 +230,7 @@ const userPhone = "+15550199";
 // 2. Trigger your application action (e.g. request 2FA SMS code)
 await triggerSmsCodeAction({ to: userPhone });
 
-// 3. Long-poll Pine Mail server-side until SMS arrives (blocks up to timeout_ms)
+// 3. Long-poll Postwire server-side until SMS arrives (blocks up to timeout_ms)
 const waitRes = await fetch(
   `http://localhost:8025/api/sms/wait?to=${encodeURIComponent(userPhone)}&since=${since}&timeout_ms=10000`
 );
@@ -284,9 +287,9 @@ await submitOtpCode(otpCode);
 
 ---
 
-## Model Context Protocol (MCP) Server (`pinemail-mcp`)
+## Model Context Protocol (MCP) Server (`postwire-mcp`)
 
-Pine Mail includes 14 built-in MCP tools for AI agents (Claude Desktop, Copilot, Cursor, agentic E2E tests):
+Postwire includes 14 built-in MCP tools for AI agents (Claude Desktop, Copilot, Cursor, agentic E2E tests):
 
 | Category | Tool Name | Parameters | Description |
 |---|---|---|---|
@@ -311,13 +314,14 @@ Pine Mail includes 14 built-in MCP tools for AI agents (Claude Desktop, Copilot,
 
 | Variable | Default | Description |
 |---|---|---|
-| `SMTP_PORT` | `1025` | Port the SMTP listener binds to |
-| `HTTP_PORT` | `8025` | Port the web UI / REST API binds to |
-| `BIND_ADDR` | `0.0.0.0` | Bind address for both listeners |
-| `DB_PATH` | `pinemail.db` (`/data/pinemail.db` in Docker) | SQLite database file path (`:memory:` for ephemeral in-memory DB) |
-| `MAX_MESSAGES` | `1000` | Oldest messages/SMS are pruned past this count (`0` = unlimited) |
-| `SMTP_HOSTNAME` | `pinemail` | Hostname advertised in the SMTP banner |
-| `PINEMAIL_URL` | `http://127.0.0.1:8025` | (`pinemail-mcp` only) Base HTTP URL of the running server |
+| `POSTWIRE_SMTP_PORT` | `1025` | SMTP listener port; `SMTP_PORT` remains a legacy alias |
+| `POSTWIRE_HTTP_PORT` | `8025` | Web UI / REST API port; `HTTP_PORT` remains a legacy alias |
+| `POSTWIRE_BIND_ADDR` | `0.0.0.0` | Bind address; `BIND_ADDR` remains a legacy alias |
+| `POSTWIRE_DB_PATH` | `postwire.db` (`/data/postwire.db` in Docker) | SQLite path; `DB_PATH` remains a legacy alias and the default preserves existing data |
+| `POSTWIRE_MAX_MESSAGES` | `1000` | FIFO limit (`0` = unlimited); `MAX_MESSAGES` remains a legacy alias |
+| `POSTWIRE_TTL_SECONDS` | `0` | Remove messages/SMS older than this many seconds on ingestion; `TTL_SECONDS` remains a legacy alias |
+| `POSTWIRE_SMTP_HOSTNAME` | `postwire` | SMTP banner hostname; `SMTP_HOSTNAME` remains a legacy alias |
+| `POSTWIRE_URL` | `http://127.0.0.1:8025` | (`postwire-mcp` only) Server URL; `POSTWIRE_URL` remains a legacy alias |
 
 ---
 
@@ -328,7 +332,7 @@ Pine Mail includes 14 built-in MCP tools for AI agents (Claude Desktop, Copilot,
 cd apps/web && npm install && npm run dev
 
 # Terminal 2 — Backend server (SMTP on :1025, API on :8025)
-cargo run -p pinemail-server
+cargo run -p postwire-server --bin postwire
 ```
 
 ## Building Release Binaries
@@ -338,7 +342,7 @@ cd apps/web && npm install && npm run build && cd ..
 cargo build --release --workspace
 ```
 
-The frontend static assets must be built to `apps/web/dist` before building `pinemail-server`, as they are embedded directly into the binary using `rust-embed`.
+The frontend static assets must be built to `apps/web/dist` before building `postwire-server`, as they are embedded directly into the `postwire` binary using `rust-embed`.
 
 ---
 

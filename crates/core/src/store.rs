@@ -5,9 +5,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::models::{MessageSummary, SmsMessage};
 
+type MessageSummaryRow = (String, String, String, i64, String, i64, i64, i64);
+
 pub struct Store {
     conn: Mutex<Connection>,
     max_messages: u64,
+    ttl_seconds: u64,
 }
 
 pub struct NewMessage {
@@ -28,6 +31,10 @@ pub struct NewSms {
 
 impl Store {
     pub fn new(db_path: &str, max_messages: u64) -> Result<Self> {
+        Self::new_with_ttl(db_path, max_messages, 0)
+    }
+
+    pub fn new_with_ttl(db_path: &str, max_messages: u64, ttl_seconds: u64) -> Result<Self> {
         let conn = Connection::open(db_path).context("failed to open database")?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
@@ -61,7 +68,15 @@ impl Store {
         Ok(Self {
             conn: Mutex::new(conn),
             max_messages,
+            ttl_seconds,
         })
+    }
+
+    pub fn counts(&self) -> Result<(i64, i64)> {
+        let conn = self.conn.lock().unwrap();
+        let email_count: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))?;
+        let sms_count: i64 = conn.query_row("SELECT COUNT(*) FROM sms", [], |r| r.get(0))?;
+        Ok((email_count, sms_count))
     }
 
     pub fn insert(&self, msg: NewMessage) -> Result<MessageSummary> {
@@ -85,6 +100,12 @@ impl Store {
                 msg.raw
             ],
         )?;
+
+        if self.ttl_seconds > 0 {
+            let cutoff = (chrono::Utc::now() - chrono::Duration::seconds(self.ttl_seconds as i64))
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            let _ = conn.execute("DELETE FROM messages WHERE received_at < ?1", params![cutoff]);
+        }
 
         if self.max_messages > 0 {
             conn.execute(
@@ -110,35 +131,23 @@ impl Store {
 
     pub fn list(&self, search: Option<&str>, limit: i64, offset: i64) -> Result<(Vec<MessageSummary>, i64)> {
         let conn = self.conn.lock().unwrap();
-        let like = search.map(|s| format!("%{}%", s));
+        let (where_clause, params) = parse_email_search(search);
 
-        let total: i64 = if let Some(ref pattern) = like {
-            conn.query_row(
-                "SELECT COUNT(*) FROM messages WHERE from_addr LIKE ?1 OR to_addrs LIKE ?1 OR subject LIKE ?1",
-                params![pattern],
-                |r| r.get(0),
-            )?
-        } else {
-            conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))?
-        };
+        let count_sql = format!("SELECT COUNT(*) FROM messages {where_clause}");
+        let mut count_stmt = conn.prepare(&count_sql)?;
+        let count_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let total: i64 = count_stmt.query_row(count_params.as_slice(), |r| r.get(0))?;
 
-        let mut stmt = if like.is_some() {
-            conn.prepare(
-                "SELECT id, from_addr, to_addrs, subject, size, received_at, read, has_html, has_attachments
-                 FROM messages
-                 WHERE from_addr LIKE ?1 OR to_addrs LIKE ?1 OR subject LIKE ?1
-                 ORDER BY received_at DESC LIMIT ?2 OFFSET ?3",
-            )?
-        } else {
-            conn.prepare(
-                "SELECT id, from_addr, to_addrs, subject, size, received_at, read, has_html, has_attachments
-                 FROM messages ORDER BY received_at DESC LIMIT ?2 OFFSET ?3",
-            )?
-        };
+        let list_sql = format!(
+            "SELECT id, from_addr, to_addrs, subject, size, received_at, read, has_html, has_attachments
+             FROM messages {where_clause} ORDER BY received_at DESC LIMIT ? OFFSET ?"
+        );
+        let mut stmt = conn.prepare(&list_sql)?;
+        let mut query_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        query_params.push(&limit);
+        query_params.push(&offset);
 
-        let dummy = "%".to_string();
-        let pattern = like.as_ref().unwrap_or(&dummy);
-        let rows = stmt.query_map(params![pattern, limit, offset], |row| {
+        let rows = stmt.query_map(query_params.as_slice(), |row| {
             let to_json: String = row.get(2)?;
             Ok(MessageSummary {
                 id: row.get(0)?,
@@ -233,7 +242,7 @@ impl Store {
 
     pub fn get_summary(&self, id: &str) -> Result<Option<MessageSummary>> {
         let conn = self.conn.lock().unwrap();
-        let row: Option<(String, String, String, i64, String, i64, i64, i64)> = conn
+        let row: Option<MessageSummaryRow> = conn
             .query_row(
                 "SELECT from_addr, to_addrs, subject, size, received_at, read, has_html, has_attachments FROM messages WHERE id = ?1",
                 params![id],
@@ -316,6 +325,12 @@ impl Store {
             params![sms.id, sms.from, sms.to, sms.body, received_at],
         )?;
 
+        if self.ttl_seconds > 0 {
+            let cutoff = (chrono::Utc::now() - chrono::Duration::seconds(self.ttl_seconds as i64))
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            let _ = conn.execute("DELETE FROM sms WHERE received_at < ?1", params![cutoff]);
+        }
+
         if self.max_messages > 0 {
             conn.execute(
                 "DELETE FROM sms WHERE id IN (
@@ -337,35 +352,23 @@ impl Store {
 
     pub fn list_sms(&self, search: Option<&str>, limit: i64, offset: i64) -> Result<(Vec<SmsMessage>, i64)> {
         let conn = self.conn.lock().unwrap();
-        let like = search.map(|s| format!("%{}%", s));
+        let (where_clause, params) = parse_sms_search(search);
 
-        let total: i64 = if let Some(ref pattern) = like {
-            conn.query_row(
-                "SELECT COUNT(*) FROM sms WHERE from_phone LIKE ?1 OR to_phone LIKE ?1 OR body LIKE ?1",
-                params![pattern],
-                |r| r.get(0),
-            )?
-        } else {
-            conn.query_row("SELECT COUNT(*) FROM sms", [], |r| r.get(0))?
-        };
+        let count_sql = format!("SELECT COUNT(*) FROM sms {where_clause}");
+        let mut count_stmt = conn.prepare(&count_sql)?;
+        let count_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let total: i64 = count_stmt.query_row(count_params.as_slice(), |r| r.get(0))?;
 
-        let mut stmt = if like.is_some() {
-            conn.prepare(
-                "SELECT id, from_phone, to_phone, body, received_at, read
-                 FROM sms
-                 WHERE from_phone LIKE ?1 OR to_phone LIKE ?1 OR body LIKE ?1
-                 ORDER BY received_at DESC LIMIT ?2 OFFSET ?3",
-            )?
-        } else {
-            conn.prepare(
-                "SELECT id, from_phone, to_phone, body, received_at, read
-                 FROM sms ORDER BY received_at DESC LIMIT ?2 OFFSET ?3",
-            )?
-        };
+        let list_sql = format!(
+            "SELECT id, from_phone, to_phone, body, received_at, read
+             FROM sms {where_clause} ORDER BY received_at DESC LIMIT ? OFFSET ?"
+        );
+        let mut stmt = conn.prepare(&list_sql)?;
+        let mut query_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        query_params.push(&limit);
+        query_params.push(&offset);
 
-        let dummy = "%".to_string();
-        let pattern = like.as_ref().unwrap_or(&dummy);
-        let rows = stmt.query_map(params![pattern, limit, offset], |row| {
+        let rows = stmt.query_map(query_params.as_slice(), |row| {
             Ok(SmsMessage {
                 id: row.get(0)?,
                 from: row.get(1)?,
@@ -511,3 +514,127 @@ impl Store {
 
 /// Max ids accepted per bulk operation, regardless of what the client sends.
 const BULK_LIMIT: usize = 1000;
+
+fn parse_email_search(search: Option<&str>) -> (String, Vec<String>) {
+    let Some(search) = search else {
+        return (String::new(), Vec::new());
+    };
+    let s = search.trim();
+    if s.is_empty() {
+        return (String::new(), Vec::new());
+    }
+
+    let mut clauses = Vec::new();
+    let mut values = Vec::new();
+
+    for token in s.split_whitespace() {
+        if let Some((key, val)) = token.split_once(':') {
+            match key.to_lowercase().as_str() {
+                "from" => {
+                    clauses.push("from_addr LIKE ?".to_string());
+                    values.push(format!("%{val}%"));
+                }
+                "to" => {
+                    clauses.push("to_addrs LIKE ?".to_string());
+                    values.push(format!("%{val}%"));
+                }
+                "subject" => {
+                    clauses.push("subject LIKE ?".to_string());
+                    values.push(format!("%{val}%"));
+                }
+                "has" => match val.to_lowercase().as_str() {
+                    "attachment" | "attachments" => clauses.push("has_attachments = 1".to_string()),
+                    "html" => clauses.push("has_html = 1".to_string()),
+                    _ => {
+                        clauses.push("(from_addr LIKE ? OR to_addrs LIKE ? OR subject LIKE ?)".to_string());
+                        values.push(format!("%{token}%"));
+                        values.push(format!("%{token}%"));
+                        values.push(format!("%{token}%"));
+                    }
+                },
+                "is" => match val.to_lowercase().as_str() {
+                    "read" => clauses.push("read = 1".to_string()),
+                    "unread" => clauses.push("read = 0".to_string()),
+                    _ => {
+                        clauses.push("(from_addr LIKE ? OR to_addrs LIKE ? OR subject LIKE ?)".to_string());
+                        values.push(format!("%{token}%"));
+                        values.push(format!("%{token}%"));
+                        values.push(format!("%{token}%"));
+                    }
+                },
+                _ => {
+                    clauses.push("(from_addr LIKE ? OR to_addrs LIKE ? OR subject LIKE ?)".to_string());
+                    values.push(format!("%{token}%"));
+                    values.push(format!("%{token}%"));
+                    values.push(format!("%{token}%"));
+                }
+            }
+        } else {
+            clauses.push("(from_addr LIKE ? OR to_addrs LIKE ? OR subject LIKE ?)".to_string());
+            values.push(format!("%{token}%"));
+            values.push(format!("%{token}%"));
+            values.push(format!("%{token}%"));
+        }
+    }
+
+    if clauses.is_empty() {
+        (String::new(), Vec::new())
+    } else {
+        (format!("WHERE {}", clauses.join(" AND ")), values)
+    }
+}
+
+fn parse_sms_search(search: Option<&str>) -> (String, Vec<String>) {
+    let Some(search) = search else {
+        return (String::new(), Vec::new());
+    };
+    let s = search.trim();
+    if s.is_empty() {
+        return (String::new(), Vec::new());
+    }
+
+    let mut clauses = Vec::new();
+    let mut values = Vec::new();
+
+    for token in s.split_whitespace() {
+        if let Some((key, val)) = token.split_once(':') {
+            match key.to_lowercase().as_str() {
+                "from" => {
+                    clauses.push("from_phone LIKE ?".to_string());
+                    values.push(format!("%{val}%"));
+                }
+                "to" => {
+                    clauses.push("to_phone LIKE ?".to_string());
+                    values.push(format!("%{val}%"));
+                }
+                "is" => match val.to_lowercase().as_str() {
+                    "read" => clauses.push("read = 1".to_string()),
+                    "unread" => clauses.push("read = 0".to_string()),
+                    _ => {
+                        clauses.push("(from_phone LIKE ? OR to_phone LIKE ? OR body LIKE ?)".to_string());
+                        values.push(format!("%{token}%"));
+                        values.push(format!("%{token}%"));
+                        values.push(format!("%{token}%"));
+                    }
+                },
+                _ => {
+                    clauses.push("(from_phone LIKE ? OR to_phone LIKE ? OR body LIKE ?)".to_string());
+                    values.push(format!("%{token}%"));
+                    values.push(format!("%{token}%"));
+                    values.push(format!("%{token}%"));
+                }
+            }
+        } else {
+            clauses.push("(from_phone LIKE ? OR to_phone LIKE ? OR body LIKE ?)".to_string());
+            values.push(format!("%{token}%"));
+            values.push(format!("%{token}%"));
+            values.push(format!("%{token}%"));
+        }
+    }
+
+    if clauses.is_empty() {
+        (String::new(), Vec::new())
+    } else {
+        (format!("WHERE {}", clauses.join(" AND ")), values)
+    }
+}

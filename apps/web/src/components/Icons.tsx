@@ -25,7 +25,7 @@ export function MailIcon(props: IconProps) {
   );
 }
 
-// Pine Mail's brand mark: a filled pine tree, used in the header logo square.
+// Postwire's brand mark, used in the header logo square.
 export function PineTreeIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -145,4 +145,3 @@ export function MailReadIcon(props: IconProps) {
     </svg>
   );
 }
-

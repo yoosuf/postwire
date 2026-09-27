@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""End-to-end demo of the pinemail-mcp tools, simulating an agentic e2e test.
+"""End-to-end demo of the postwire-mcp tools, simulating an agentic e2e test.
 
-Spawns `pinemail-mcp` as a subprocess and talks JSON-RPC 2.0 to it over stdio,
+Spawns `postwire-mcp` as a subprocess and talks JSON-RPC 2.0 to it over stdio,
 exactly like an MCP-aware coding agent (Claude/Copilot/Cursor) would:
 
   1. initialize                          - handshake
@@ -17,12 +17,12 @@ exactly like an MCP-aware coding agent (Claude/Copilot/Cursor) would:
   9. tools/call extract_sms_signals      - pull 2FA OTP code from SMS
  10. tools/call delete_sms               - clean up SMS
 
-Requires a running pinemail server (default http://127.0.0.1:8025) and the
-pinemail-mcp binary built (`cargo build --release -p pinemail-mcp`).
+Requires a running Postwire server (default http://127.0.0.1:8025) and the
+postwire-mcp binary built (`cargo build --release -p postwire-mcp`).
 
 Usage:
-    PINEMAIL_URL=http://127.0.0.1:8025 python3 examples/mcp_e2e_demo.py \
-        [path/to/pinemail-mcp]
+    POSTWIRE_URL=http://127.0.0.1:8025 python3 examples/mcp_e2e_demo.py \
+        [path/to/postwire-mcp]
 """
 
 import json
@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 
-BIN = sys.argv[1] if len(sys.argv) > 1 else "target/release/pinemail-mcp"
+BIN = sys.argv[1] if len(sys.argv) > 1 else "target/release/postwire-mcp"
 
 
 class McpClient:
@@ -137,4 +137,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

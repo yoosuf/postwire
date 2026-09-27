@@ -1,14 +1,16 @@
 services:
-  pinemail:
+  postwire:
     build: .
-    image: pinemail:latest
+    image: postwire:latest
     ports:
       - "1025:1025" # SMTP - point your app's mailer here
       - "8025:8025" # Web UI + REST API
     environment:
-      MAX_MESSAGES: 1000
+      POSTWIRE_MAX_MESSAGES: 1000
     volumes:
-      - pinemail-data:/data
+      - postwire-data:/data
+    networks:
+      default: {}
     restart: unless-stopped
     # Hard memory ceiling: a bounded SQLite-backed catcher with paginated list/bulk
     # endpoints has no reason to grow unbounded; this is a backstop, not a tuning knob.
@@ -18,17 +20,17 @@ services:
           memory: 256M
 
   # Optional: MCP server so AI agents (Claude Desktop, Copilot, Cursor, etc.) can
-  # discover captured emails during agentic development. Runs `pinemail-mcp` over
+  # discover captured emails during agentic development. Runs `postwire-mcp` over
   # stdio; most MCP clients expect to spawn this themselves (see AGENTS.md), but this
   # service is handy for a quick health check: `docker compose run --rm mcp`.
   mcp:
     build: .
-    image: pinemail:latest
-    entrypoint: ["/usr/local/bin/pinemail-mcp"]
+    image: postwire:latest
+    entrypoint: ["/usr/local/bin/postwire-mcp"]
     environment:
-      PINEMAIL_URL: http://pinemail:8025
+      POSTWIRE_URL: http://postwire:8025
     depends_on:
-      - pinemail
+      - postwire
     profiles: ["mcp"]
     stdin_open: true
     deploy:
@@ -37,4 +39,7 @@ services:
           memory: 64M
 
 volumes:
-  pinemail-data:
+  postwire-data:
+
+networks:
+  default: {}

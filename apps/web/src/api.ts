@@ -18,8 +18,11 @@ export const api = {
     return fetch(`/api/messages/${id}`).then((r) => json(r));
   },
 
-  extract(id: string): Promise<ExtractedSignals> {
-    return fetch(`/api/messages/${id}/extract`).then((r) => json(r));
+  extract(id: string, regex?: string): Promise<ExtractedSignals> {
+    const params = new URLSearchParams();
+    if (regex) params.set("regex", regex);
+    const q = params.toString();
+    return fetch(`/api/messages/${id}/extract${q ? `?${q}` : ""}`).then((r) => json(r));
   },
 
   analysis(id: string): Promise<MessageAnalysis> {
@@ -111,8 +114,11 @@ export const api = {
     return fetch(`/api/sms/${id}`).then((r) => json(r));
   },
 
-  extractSms(id: string): Promise<ExtractedSignals> {
-    return fetch(`/api/sms/${id}/extract`).then((r) => json(r));
+  extractSms(id: string, regex?: string): Promise<ExtractedSignals> {
+    const params = new URLSearchParams();
+    if (regex) params.set("regex", regex);
+    const q = params.toString();
+    return fetch(`/api/sms/${id}/extract${q ? `?${q}` : ""}`).then((r) => json(r));
   },
 
   markSmsRead(id: string, read: boolean): Promise<void> {
@@ -162,6 +168,22 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to, from, body }),
+    }).then((r) => json(r));
+  },
+
+  replay(id: string, targetUrl: string): Promise<{ success: boolean; message: string }> {
+    return fetch(`/api/messages/${id}/replay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_url: targetUrl }),
+    }).then((r) => json(r));
+  },
+
+  replaySms(id: string, targetUrl: string): Promise<{ success: boolean; message: string }> {
+    return fetch(`/api/sms/${id}/replay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_url: targetUrl }),
     }).then((r) => json(r));
   },
 };

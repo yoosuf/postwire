@@ -1,9 +1,9 @@
 {
-  "name": "pinemail-ui",
+  "name": "postwire-ui",
   "private": true,
   "version": "0.1.0",
-  "description": "React + Vite + TypeScript web UI for Pine Mail — embedded dual-view Email & SMS catcher and SMTP testing server",
-  "repository": "https://github.com/yoosuf/pinemail",
+  "description": "React + Vite + TypeScript web UI for Postwire — embedded dual-view Email & SMS catcher and SMTP testing server",
+  "repository": "https://github.com/yoosuf/postwire",
   "keywords": ["mail", "smtp", "sms", "mail-catcher", "sms-catcher", "testing", "react", "vite"],
   "type": "module",
   "scripts": {

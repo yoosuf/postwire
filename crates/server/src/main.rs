@@ -1,11 +1,9 @@
-mod api;
-mod smtp;
-mod web;
+use postwire_server::{api, smtp, web};
 
 use std::sync::Arc;
 
-use pinemail_core::config::Config;
-use pinemail_core::store::Store;
+use postwire_core::config::Config;
+use postwire_core::store::Store;
 use tokio::signal;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -20,7 +18,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env();
-    let store = Arc::new(Store::new(&config.db_path, config.max_messages)?);
+    let store = Arc::new(Store::new_with_ttl(
+        &config.db_path,
+        config.max_messages,
+        config.ttl_seconds,
+    )?);
     let (tx, _rx) = broadcast::channel(256);
 
     smtp::spawn_smtp_server(config.clone(), store.clone(), tx.clone());
@@ -30,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = format!("{}:{}", config.bind_addr, config.http_port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!(%addr, smtp_port = config.smtp_port, "pinemail listening");
+    info!(%addr, smtp_port = config.smtp_port, "postwire listening");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

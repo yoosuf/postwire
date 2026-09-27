@@ -199,9 +199,7 @@ pub fn analyze_html(html: Option<&str>) -> HtmlAnalysis {
         Check {
             id: "image_alt",
             label: "Image alt text",
-            status: if image_count == 0 {
-                CheckStatus::Pass
-            } else if missing_alt == 0 {
+            status: if image_count == 0 || missing_alt == 0 {
                 CheckStatus::Pass
             } else {
                 CheckStatus::Warn

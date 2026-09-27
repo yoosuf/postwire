@@ -1,14 +1,14 @@
 #!/bin/sh
-# Pine Mail Installer Script for macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/yoosuf/pinemail/main/install.sh | sh
+# Postwire Installer Script for macOS and Linux
+# Usage: curl -fsSL https://raw.githubusercontent.com/yoosuf/postwire/main/install.sh | sh
 set -e
 
-REPO="yoosuf/pinemail"
+REPO="yoosuf/postwire"
 
 # Determine download tool
 downloader() {
     if command -v curl >/dev/null 2>&1; then
-        curl -sSL "$1"
+        curl -fsSL "$1"
     elif command -v wget >/dev/null 2>&1; then
         wget -qO- "$1"
     else
@@ -21,7 +21,7 @@ download_file() {
     url="$1"
     dest="$2"
     if command -v curl >/dev/null 2>&1; then
-        curl -sSL "$url" -o "$dest"
+        curl -fsSL "$url" -o "$dest"
     elif command -v wget >/dev/null 2>&1; then
         wget -qO "$dest" "$url"
     else
@@ -31,8 +31,10 @@ download_file() {
 }
 
 # Determine installation directory
-if [ -n "$PINEMAIL_INSTALL_DIR" ]; then
-    INSTALL_DIR="$PINEMAIL_INSTALL_DIR"
+if [ -n "$POSTWIRE_INSTALL_DIR" ]; then
+    INSTALL_DIR="$POSTWIRE_INSTALL_DIR"
+elif [ -n "$POSTWIRE_INSTALL_DIR" ]; then
+    INSTALL_DIR="$POSTWIRE_INSTALL_DIR"
 elif [ -w "/usr/local/bin" ]; then
     INSTALL_DIR="/usr/local/bin"
 else
@@ -73,47 +75,60 @@ esac
 
 TARGET="${ARCH_TARGET}-${OS_TARGET}"
 
-echo "🌲 Pine Mail Official Installer"
+echo "Postwire Official Installer"
 echo "Target Platform: ${TARGET}"
 echo "Install Directory: ${INSTALL_DIR}"
 
 # Fetch release version
-if [ -z "$PINEMAIL_VERSION" ]; then
+if [ -z "${POSTWIRE_VERSION:-${POSTWIRE_VERSION:-}}" ]; then
     RELEASE_JSON=$(downloader "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || echo "")
     TAG=$(echo "$RELEASE_JSON" | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$TAG" ]; then
         TAG="v0.1.0"
     fi
 else
-    TAG="$PINEMAIL_VERSION"
+    TAG="${POSTWIRE_VERSION:-$POSTWIRE_VERSION}"
 fi
 
 echo "Installing version ${TAG}..."
 
-TMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'pinemail')
+TMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'postwire')
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-ARCHIVE_NAME="pinemail-${TAG}-${TARGET}.tar.gz"
+ARCHIVE_NAME="postwire-${TAG}-${TARGET}.tar.gz"
 URL="https://github.${REPO_HOST:-com}/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
 TARBALL_PATH="$TMP_DIR/$ARCHIVE_NAME"
 
 echo "Downloading release payload from ${URL}..."
-download_file "$URL" "$TARBALL_PATH"
+if ! download_file "$URL" "$TARBALL_PATH"; then
+    ARCHIVE_NAME="postwire-${TAG}-${TARGET}.tar.gz"
+    URL="https://github.${REPO_HOST:-com}/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
+    TARBALL_PATH="$TMP_DIR/$ARCHIVE_NAME"
+    echo "Postwire archive unavailable; trying legacy Pine Mail release..."
+    download_file "$URL" "$TARBALL_PATH"
+fi
 
 echo "Extracting binary payload..."
 tar -xzf "$TARBALL_PATH" -C "$TMP_DIR"
 
-if [ -f "$TMP_DIR/pinemail" ]; then
-    mv "$TMP_DIR/pinemail" "$INSTALL_DIR/pinemail"
-    chmod 0755 "$INSTALL_DIR/pinemail"
+# Older tagged releases only contain the legacy command names. Promote them in
+# the extracted payload so a clean install receives the new command names too.
+if [ ! -f "$TMP_DIR/postwire" ] && [ -f "$TMP_DIR/postwire" ]; then
+    cp "$TMP_DIR/postwire" "$TMP_DIR/postwire"
+fi
+if [ ! -f "$TMP_DIR/postwire-mcp" ] && [ -f "$TMP_DIR/postwire-mcp" ]; then
+    cp "$TMP_DIR/postwire-mcp" "$TMP_DIR/postwire-mcp"
 fi
 
-if [ -f "$TMP_DIR/pinemail-mcp" ]; then
-    mv "$TMP_DIR/pinemail-mcp" "$INSTALL_DIR/pinemail-mcp"
-    chmod 0755 "$INSTALL_DIR/pinemail-mcp"
-fi
+for binary in postwire postwire-mcp postwire postwire-mcp; do
+    if [ -f "$TMP_DIR/$binary" ]; then
+        mv "$TMP_DIR/$binary" "$INSTALL_DIR/$binary"
+        chmod 0755 "$INSTALL_DIR/$binary"
+    fi
+done
+chmod 0755 "$INSTALL_DIR/postwire" "$INSTALL_DIR/postwire-mcp" "$INSTALL_DIR/postwire" "$INSTALL_DIR/postwire-mcp"
 
-echo "✅ Pine Mail ${TAG} successfully installed to ${INSTALL_DIR}"
+echo "✅ Postwire ${TAG} successfully installed to ${INSTALL_DIR}"
 
 # PATH warning check
 case ":$PATH:" in
@@ -128,5 +143,6 @@ esac
 
 echo ""
 echo "Quick Start:"
-echo "  pinemail          # Starts SMTP on :1025 and Web UI / REST API on :8025"
-echo "  pinemail-mcp      # Starts MCP stdio server for AI agents"
+echo "  postwire          # Starts SMTP on :1025 and Web UI / REST API on :8025"
+echo "  postwire-mcp      # Starts MCP stdio server for AI agents"
+echo "  postwire / postwire-mcp remain available as compatibility commands"

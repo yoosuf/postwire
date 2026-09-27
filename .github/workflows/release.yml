@@ -65,32 +65,39 @@ jobs:
         run: |
           TAG=${GITHUB_REF_NAME:-v0.1.0}
           RAW_VERSION="${TAG#v}"
-          ARCHIVE_NAME="pinemail-${TAG}-${{ matrix.target }}.tar.gz"
+          ARCHIVE_NAME="postwire-${TAG}-${{ matrix.target }}.tar.gz"
           mkdir -p dist_tmp
-          cp target/${{ matrix.target }}/release/pinemail dist_tmp/
-          cp target/${{ matrix.target }}/release/pinemail-mcp dist_tmp/
-          tar -czf ${ARCHIVE_NAME} -C dist_tmp pinemail pinemail-mcp
-          echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
+          cp "target/${{ matrix.target }}/release/postwire" dist_tmp/
+          cp "target/${{ matrix.target }}/release/postwire-mcp" dist_tmp/
+          cp "target/${{ matrix.target }}/release/postwire" dist_tmp/
+          cp "target/${{ matrix.target }}/release/postwire-mcp" dist_tmp/
+          tar -czf "${ARCHIVE_NAME}" -C dist_tmp postwire postwire-mcp postwire postwire-mcp
+          tar -czf "postwire-${TAG}-${{ matrix.target }}.tar.gz" -C dist_tmp postwire postwire-mcp postwire postwire-mcp
+          echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "$GITHUB_ENV"
 
           # Package Linux .deb & .rpm packages
           if [ "${{ matrix.deb_arch }}" != "" ]; then
-            DEB_NAME="pinemail_${RAW_VERSION}_${{ matrix.deb_arch }}.deb"
+            DEB_NAME="postwire_${RAW_VERSION}_${{ matrix.deb_arch }}.deb"
             DEB_ROOT="deb_root"
             mkdir -p "${DEB_ROOT}/usr/bin" "${DEB_ROOT}/DEBIAN"
-            cp dist_tmp/pinemail "${DEB_ROOT}/usr/bin/"
-            cp dist_tmp/pinemail-mcp "${DEB_ROOT}/usr/bin/"
-            printf "Package: pinemail\nVersion: %s\nArchitecture: %s\nMaintainer: Yoosuf <yoosuf@users.noreply.github.com>\nSection: utils\nPriority: optional\nDescription: Tiny single-binary SMTP & SMS catcher for development environments and AI agents.\n" "${RAW_VERSION}" "${{ matrix.deb_arch }}" > "${DEB_ROOT}/DEBIAN/control"
+            cp dist_tmp/postwire "${DEB_ROOT}/usr/bin/"
+            cp dist_tmp/postwire-mcp "${DEB_ROOT}/usr/bin/"
+            cp dist_tmp/postwire "${DEB_ROOT}/usr/bin/"
+            cp dist_tmp/postwire-mcp "${DEB_ROOT}/usr/bin/"
+            printf "Package: postwire\nVersion: %s\nArchitecture: %s\nMaintainer: Yoosuf <yoosuf@users.noreply.github.com>\nSection: utils\nPriority: optional\nDescription: Tiny single-binary SMTP & SMS catcher for development environments and AI agents.\n" "${RAW_VERSION}" "${{ matrix.deb_arch }}" > "${DEB_ROOT}/DEBIAN/control"
             dpkg-deb --build "${DEB_ROOT}" "${DEB_NAME}"
-            cp "${DEB_NAME}" "pinemail_${{ matrix.deb_arch }}.deb"
+            cp "${DEB_NAME}" "postwire_${{ matrix.deb_arch }}.deb"
+            cp "${DEB_NAME}" "postwire_${{ matrix.deb_arch }}.deb"
 
             # Create RPM structure using rpmbuild
             sudo apt-get update -y && sudo apt-get install -y rpm
             RPM_ROOT="${HOME}/rpmbuild"
             mkdir -p "${RPM_ROOT}/BUILD" "${RPM_ROOT}/RPMS" "${RPM_ROOT}/SOURCES" "${RPM_ROOT}/SPECS" "${RPM_ROOT}/SRPMS"
-            printf "Name: pinemail\nVersion: %s\nRelease: 1\nSummary: Tiny single-binary SMTP & SMS catcher\nLicense: MIT\nURL: https://github.com/yoosuf/pinemail\n\n%%description\nPine Mail is a tiny single-binary SMTP & SMS catcher.\n\n%%prep\n\n%%build\n\n%%install\nmkdir -p %%{buildroot}/usr/bin\ninstall -m 755 ${PWD}/dist_tmp/pinemail %%{buildroot}/usr/bin/pinemail\ninstall -m 755 ${PWD}/dist_tmp/pinemail-mcp %%{buildroot}/usr/bin/pinemail-mcp\n\n%%files\n/usr/bin/pinemail\n/usr/bin/pinemail-mcp\n" "${RAW_VERSION}" > "${RPM_ROOT}/SPECS/pinemail.spec"
-            rpmbuild -bb --target ${{ matrix.rpm_arch }}-linux "${RPM_ROOT}/SPECS/pinemail.spec"
-            cp "${RPM_ROOT}/RPMS/${{ matrix.rpm_arch }}/"*.rpm "pinemail-${RAW_VERSION}-1.${{ matrix.rpm_arch }}.rpm"
-            cp "pinemail-${RAW_VERSION}-1.${{ matrix.rpm_arch }}.rpm" "pinemail.${{ matrix.rpm_arch }}.rpm"
+            printf "Name: postwire\nVersion: %s\nRelease: 1\nSummary: Tiny single-binary SMTP & SMS catcher\nLicense: MIT\nURL: https://github.com/yoosuf/postwire\n\n%%description\nPostwire is a tiny single-binary SMTP & SMS catcher.\n\n%%prep\n\n%%build\n\n%%install\nmkdir -p %%{buildroot}/usr/bin\ninstall -m 755 ${PWD}/dist_tmp/postwire %%{buildroot}/usr/bin/postwire\ninstall -m 755 ${PWD}/dist_tmp/postwire-mcp %%{buildroot}/usr/bin/postwire-mcp\ninstall -m 755 ${PWD}/dist_tmp/postwire %%{buildroot}/usr/bin/postwire\ninstall -m 755 ${PWD}/dist_tmp/postwire-mcp %%{buildroot}/usr/bin/postwire-mcp\n\n%%files\n/usr/bin/postwire\n/usr/bin/postwire-mcp\n/usr/bin/postwire\n/usr/bin/postwire-mcp\n" "${RAW_VERSION}" > "${RPM_ROOT}/SPECS/postwire.spec"
+            rpmbuild -bb --target ${{ matrix.rpm_arch }}-linux "${RPM_ROOT}/SPECS/postwire.spec"
+            cp "${RPM_ROOT}/RPMS/${{ matrix.rpm_arch }}/"*.rpm "postwire-${RAW_VERSION}-1.${{ matrix.rpm_arch }}.rpm"
+            cp "postwire-${RAW_VERSION}-1.${{ matrix.rpm_arch }}.rpm" "postwire.${{ matrix.rpm_arch }}.rpm"
+            cp "postwire-${RAW_VERSION}-1.${{ matrix.rpm_arch }}.rpm" "postwire.${{ matrix.rpm_arch }}.rpm"
           fi
 
       - name: Prepare release archive (Windows)
@@ -98,11 +105,14 @@ jobs:
         shell: powershell
         run: |
           $TAG = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v0.1.0" }
-          $ArchiveName = "pinemail-${TAG}-${{ matrix.target }}.zip"
+          $ArchiveName = "postwire-${TAG}-${{ matrix.target }}.zip"
           New-Item -ItemType Directory -Path dist_tmp -Force
-          Copy-Item target/${{ matrix.target }}/release/pinemail.exe dist_tmp/
-          Copy-Item target/${{ matrix.target }}/release/pinemail-mcp.exe dist_tmp/
+          Copy-Item target/${{ matrix.target }}/release/postwire.exe dist_tmp/
+          Copy-Item target/${{ matrix.target }}/release/postwire-mcp.exe dist_tmp/
+          Copy-Item target/${{ matrix.target }}/release/postwire.exe dist_tmp/
+          Copy-Item target/${{ matrix.target }}/release/postwire-mcp.exe dist_tmp/
           Compress-Archive -Path dist_tmp\* -DestinationPath $ArchiveName
+          Compress-Archive -Path dist_tmp\* -DestinationPath "postwire-${TAG}-${{ matrix.target }}.zip"
           Add-Content -Path $env:GITHUB_ENV -Value "ARCHIVE_NAME=${ArchiveName}"
 
       - name: Upload artifact
@@ -110,7 +120,8 @@ jobs:
         with:
           name: ${{ env.ARCHIVE_NAME }}
           path: |
-            ${{ env.ARCHIVE_NAME }}
+            *.tar.gz
+            *.zip
             *.deb
             *.rpm
 
@@ -131,7 +142,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd release-assets
-          sha256sum * > SHA256SUMS
+          sha256sum ./* > SHA256SUMS
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

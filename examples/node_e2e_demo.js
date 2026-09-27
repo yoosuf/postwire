@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * End-to-end demo using Node.js native fetch (Node 18+) to interact with Pine Mail REST API.
+ * End-to-end demo using Node.js native fetch (Node 18+) to interact with Postwire REST API.
  * Demonstrates long-polling wait, signal extraction (OTP/links), and cleanup for Email & SMS.
  *
  * Usage:
- *   node examples/node_e2e_demo.js [PINEMAIL_URL]
+ *   node examples/node_e2e_demo.js [POSTWIRE_URL]
  */
 
-const BASE_URL = process.argv[2] || process.env.PINEMAIL_URL || "http://127.0.0.1:8025";
+const BASE_URL = process.argv[2] || process.env.POSTWIRE_URL || "http://127.0.0.1:8025";
 
 async function main() {
-  console.log(`Connecting to Pine Mail server at ${BASE_URL}...\n`);
+  console.log(`Connecting to Postwire server at ${BASE_URL}...\n`);
 
   // --- 1. EMAIL E2E FLOW ---
   const emailRecipient = "node-agent@example.com";

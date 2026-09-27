@@ -7,10 +7,10 @@ use tokio::sync::broadcast;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use pinemail_core::config::Config;
-use pinemail_core::mail;
-use pinemail_core::models::Event;
-use pinemail_core::store::{NewMessage, Store};
+use postwire_core::config::Config;
+use postwire_core::mail;
+use postwire_core::models::Event;
+use postwire_core::store::{NewMessage, Store};
 
 #[derive(Clone)]
 pub struct MailHandler {

@@ -38,6 +38,7 @@ export interface MessageList {
 export interface ExtractedSignals {
   codes: string[];
   links: string[];
+  matches?: string[];
 }
 
 export type CheckStatus = "pass" | "warn" | "fail";

@@ -1,10 +1,10 @@
 //! Minimal MCP (Model Context Protocol) server, stdio transport, no SDK dependency.
 //!
-//! Exposes Pine Mail's inbox as tools so AI coding agents can discover captured
+//! Exposes Postwire's inbox as tools so AI coding agents can discover captured
 //! emails during agentic/e2e development: list them, wait for a fresh one, pull out
 //! OTP codes / magic links, or clean up after a test run.
 //!
-//! Talks to a running `pinemail-server` over HTTP (`PINEMAIL_URL`, default
+//! Talks to a running `postwire` server over HTTP via `POSTWIRE_URL` (default
 //! `http://127.0.0.1:8025`) rather than the database directly, so it works whether
 //! the server is local, in another container, or on another host.
 
@@ -16,7 +16,11 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
 fn base_url() -> String {
-    std::env::var("PINEMAIL_URL").unwrap_or_else(|_| "http://127.0.0.1:8025".to_string())
+    server_url(std::env::var("POSTWIRE_URL").ok().as_deref())
+}
+
+fn server_url(postwire: Option<&str>) -> String {
+    postwire.unwrap_or("http://127.0.0.1:8025").to_string()
 }
 
 #[tokio::main]
@@ -64,7 +68,7 @@ fn initialize_result() -> Value {
     json!({
         "protocolVersion": PROTOCOL_VERSION,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "pinemail-mcp", "version": env!("CARGO_PKG_VERSION") }
+        "serverInfo": { "name": "postwire-mcp", "version": env!("CARGO_PKG_VERSION") }
     })
 }
 
@@ -107,10 +111,13 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "extract_signals",
-            "description": "Pull likely OTP/verification codes and links out of an email's body.",
+            "description": "Pull likely OTP/verification codes and links out of an email's body. Optionally match custom regular expressions.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "id": { "type": "string" } },
+                "properties": {
+                    "id": { "type": "string" },
+                    "regex": { "type": "string", "description": "Optional custom regular expression pattern to match" }
+                },
                 "required": ["id"]
             }
         },
@@ -175,16 +182,19 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "extract_sms_signals",
-            "description": "Pull likely OTP/verification codes and links out of an SMS message body.",
+            "description": "Pull likely OTP/verification codes and links out of an SMS message body. Optionally match custom regular expressions.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "id": { "type": "string" } },
+                "properties": {
+                    "id": { "type": "string" },
+                    "regex": { "type": "string", "description": "Optional custom regular expression pattern to match" }
+                },
                 "required": ["id"]
             }
         },
         {
             "name": "send_test_sms",
-            "description": "Send a synthetic test SMS message into Pine Mail.",
+            "description": "Send a synthetic test SMS message into Postwire.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -266,8 +276,12 @@ async fn handle_tool_call(client: &reqwest::Client, request: &Value) -> anyhow::
         }
         "extract_signals" => {
             let id = require_str(&args, "id")?;
+            let mut url = reqwest::Url::parse(&format!("{base}/api/messages/{id}/extract"))?;
+            if let Some(re) = args.get("regex").and_then(|v| v.as_str()) {
+                url.query_pairs_mut().append_pair("regex", re);
+            }
             client
-                .get(format!("{base}/api/messages/{id}/extract"))
+                .get(url)
                 .send()
                 .await?
                 .json::<Value>()
@@ -340,8 +354,12 @@ async fn handle_tool_call(client: &reqwest::Client, request: &Value) -> anyhow::
         }
         "extract_sms_signals" => {
             let id = require_str(&args, "id")?;
+            let mut url = reqwest::Url::parse(&format!("{base}/api/sms/{id}/extract"))?;
+            if let Some(re) = args.get("regex").and_then(|v| v.as_str()) {
+                url.query_pairs_mut().append_pair("regex", re);
+            }
             client
-                .get(format!("{base}/api/sms/{id}/extract"))
+                .get(url)
                 .send()
                 .await?
                 .json::<Value>()
@@ -425,4 +443,24 @@ fn tool_error(message: &str) -> Value {
 
 fn error(id: Value, code: i64, message: &str) -> String {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::server_url;
+
+    #[test]
+    fn postwire_url_uses_the_configured_server() {
+        assert_eq!(server_url(Some("http://postwire")), "http://postwire");
+    }
+
+    #[test]
+    fn default_server_url_is_used_when_not_configured() {
+        assert_eq!(server_url(None), "http://127.0.0.1:8025");
+    }
+
+    #[test]
+    fn initialize_reports_the_postwire_product_name() {
+        assert_eq!(super::initialize_result()["serverInfo"]["name"], "postwire-mcp");
+    }
 }

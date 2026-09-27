@@ -50,7 +50,9 @@ const ConnectionField = memo(function ConnectionField({
 });
 
 type Snippet = "node" | "python" | "env" | "curl";
+type VendorSnippet = "resend" | "sendgrid" | "postmark";
 type SmsSnippet = "json" | "twilio" | "python" | "node";
+type WebhookSnippet = "slack" | "discord" | "generic";
 
 function snippetFor(kind: Snippet, host: string, port: number): string {
   switch (kind) {
@@ -67,13 +69,13 @@ await transport.sendMail({
   from: "you@yourapp.dev",
   to: "user@example.com",
   subject: "Hello",
-  text: "Sent via Pine Mail",
+  text: "Sent via Postwire",
 });`;
     case "python":
       return `import smtplib
 from email.mime.text import MIMEText
 
-msg = MIMEText("Sent via Pine Mail")
+msg = MIMEText("Sent via Postwire")
 msg["Subject"] = "Hello"
 msg["From"] = "you@yourapp.dev"
 msg["To"] = "user@example.com"
@@ -95,8 +97,49 @@ From: you@yourapp.dev
 To: user@example.com
 Subject: Test Email
 
-Hello from Pine Mail cURL!
+Hello from Postwire cURL!
 EOF`;
+  }
+}
+
+function vendorSnippetFor(kind: VendorSnippet, host: string): string {
+  switch (kind) {
+    case "resend":
+      return `// Resend API format (POST http://${host}:8025/emails)
+await fetch("http://${host}:8025/emails", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    from: "onboarding@resend.dev",
+    to: ["user@example.com"],
+    subject: "Hello World",
+    html: "<p>Your code is 482913</p>"
+  })
+});`;
+    case "sendgrid":
+      return `// SendGrid API format (POST http://${host}:8025/v3/mail/send)
+await fetch("http://${host}:8025/v3/mail/send", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    personalizations: [{ to: [{ email: "user@example.com" }] }],
+    from: { email: "sender@example.com" },
+    subject: "SendGrid Test",
+    content: [{ type: "text/html", value: "<p>Code: 482913</p>" }]
+  })
+});`;
+    case "postmark":
+      return `// Postmark API format (POST http://${host}:8025/email)
+await fetch("http://${host}:8025/email", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    From: "sender@example.com",
+    To: "user@example.com",
+    Subject: "Postmark Test",
+    HtmlBody: "<p>Code: 482913</p>"
+  })
+});`;
   }
 }
 
@@ -141,6 +184,23 @@ print(response.json())`;
   }
 }
 
+function webhookSnippetFor(kind: WebhookSnippet, host: string): string {
+  switch (kind) {
+    case "slack":
+      return `curl -X POST http://${host}:8025/api/webhooks/slack \\
+  -H "Content-Type: application/json" \\
+  -d '{"text": "Alert: Verification code is 884422", "username": "AlertBot"}'`;
+    case "discord":
+      return `curl -X POST http://${host}:8025/api/webhooks/discord \\
+  -H "Content-Type: application/json" \\
+  -d '{"content": "Alert: OTP code is 332211", "username": "DiscordBot"}'`;
+    case "generic":
+      return `curl -X POST http://${host}:8025/api/webhooks/generic \\
+  -H "Content-Type: application/json" \\
+  -d '{"from": "auth-service", "to": "alerts", "body": "Custom notification payload 991122"}'`;
+  }
+}
+
 const SNIPPET_TABS: [Snippet, string][] = [
   ["node", "Node.js"],
   ["python", "Python"],
@@ -148,11 +208,23 @@ const SNIPPET_TABS: [Snippet, string][] = [
   ["curl", "cURL"],
 ];
 
+const VENDOR_SNIPPET_TABS: [VendorSnippet, string][] = [
+  ["resend", "Resend API"],
+  ["sendgrid", "SendGrid API"],
+  ["postmark", "Postmark API"],
+];
+
 const SMS_SNIPPET_TABS: [SmsSnippet, string][] = [
   ["json", "cURL (JSON)"],
   ["twilio", "cURL (Twilio)"],
   ["python", "Python"],
   ["node", "Node.js"],
+];
+
+const WEBHOOK_SNIPPET_TABS: [WebhookSnippet, string][] = [
+  ["slack", "Slack Webhook"],
+  ["discord", "Discord Webhook"],
+  ["generic", "Generic JSON"],
 ];
 
 export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () => void }) {
@@ -168,7 +240,9 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
 
   const [config, setConfig] = useState<ServerConfig | null>(null);
   const [snippet, setSnippet] = useState<Snippet>("node");
+  const [vendorSnippet, setVendorSnippet] = useState<VendorSnippet>("resend");
   const [smsSnippet, setSmsSnippet] = useState<SmsSnippet>("json");
+  const [webhookSnippet, setWebhookSnippet] = useState<WebhookSnippet>("slack");
 
   const [testTo, setTestTo] = useState("");
   const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -185,7 +259,9 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
   const port = config?.smtp_port ?? 1025;
 
   const currentEmailSnippet = useMemo(() => snippetFor(snippet, host, port), [snippet, host, port]);
+  const currentVendorSnippet = useMemo(() => vendorSnippetFor(vendorSnippet, host), [vendorSnippet, host]);
   const currentSmsSnippet = useMemo(() => smsSnippetFor(smsSnippet, host), [smsSnippet, host]);
+  const currentWebhookSnippet = useMemo(() => webhookSnippetFor(webhookSnippet, host), [webhookSnippet, host]);
 
   async function handleSendTest() {
     setSendState("sending");
@@ -320,6 +396,41 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
                 </div>
               </section>
 
+              {/* Vendor Email API Emulators Snippets */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Vendor Email API Emulators
+                  </h3>
+                  <span className="text-[11px] font-mono text-indigo-400">HTTP REST</span>
+                </div>
+                <div className={card}>
+                  <div className="flex items-center gap-1 border-b border-zinc-800/80 bg-zinc-900/60 px-3 pt-2">
+                    {VENDOR_SNIPPET_TABS.map(([key, label]) => (
+                      <button
+                        key={key}
+                        onClick={() => setVendorSnippet(key)}
+                        className={`rounded-t-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                          vendorSnippet === key
+                            ? "border-b-2 border-indigo-500 bg-zinc-800/50 text-zinc-100"
+                            : "text-zinc-400 hover:text-zinc-200"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <div className="ml-auto pb-1">
+                      <CopyButton value={currentVendorSnippet} />
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-relaxed text-zinc-300">
+                      {currentVendorSnippet}
+                    </pre>
+                  </div>
+                </div>
+              </section>
+
               {/* Send Test Email */}
               <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 space-y-3">
                 <div>
@@ -327,7 +438,7 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
                     Deliver Test Email
                   </h3>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Instantly deliver a test MIME email to verify Pine Mail SMTP interception.
+                    Instantly deliver a test MIME email to verify Postwire SMTP interception.
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -361,6 +472,38 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
                 <div className="grid gap-2">
                   <ConnectionField method="POST" label="REST Ingest API" value={`http://${host}:8025/api/sms`} />
                   <ConnectionField method="POST" label="Twilio Webhook URL" value={`http://${host}:8025/api/sms/webhook`} />
+                </div>
+              </section>
+
+              {/* Multi-Channel Webhook Catchers */}
+              <section className="space-y-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Slack, Discord & Generic Webhooks
+                </h3>
+                <div className={card}>
+                  <div className="flex items-center gap-1 border-b border-zinc-800/80 bg-zinc-900/60 px-3 pt-2">
+                    {WEBHOOK_SNIPPET_TABS.map(([key, label]) => (
+                      <button
+                        key={key}
+                        onClick={() => setWebhookSnippet(key)}
+                        className={`rounded-t-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                          webhookSnippet === key
+                            ? "border-b-2 border-emerald-500 bg-zinc-800/50 text-zinc-100"
+                            : "text-zinc-400 hover:text-zinc-200"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <div className="ml-auto pb-1">
+                      <CopyButton value={currentWebhookSnippet} />
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-relaxed text-zinc-300">
+                      {currentWebhookSnippet}
+                    </pre>
+                  </div>
                 </div>
               </section>
 
@@ -403,7 +546,7 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
                     Deliver Test SMS
                   </h3>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Synthesize and inject a verification SMS directly into your Pine Mail SMS inbox.
+                    Synthesize and inject a verification SMS directly into your Postwire SMS inbox.
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -456,5 +599,4 @@ export const SetupPanel = memo(function SetupPanel({ onClose }: { onClose?: () =
     </div>
   );
 });
-
 

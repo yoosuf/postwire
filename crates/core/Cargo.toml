@@ -1,10 +1,10 @@
 [package]
-name = "pinemail-core"
+name = "postwire-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Shared storage, MIME parsing, SMS catching, signal extraction, HTML/spam analysis, and config for Pine Mail — an SMTP & SMS mail catcher for development and testing"
-repository = "https://github.com/yoosuf/pinemail"
+description = "Shared storage, MIME parsing, SMS catching, signal extraction, HTML/spam analysis, and config for Postwire — an SMTP & SMS mail catcher for development and testing"
+repository = "https://github.com/yoosuf/postwire"
 keywords = ["mail", "smtp", "sms", "mail-catcher", "sms-catcher", "testing", "email"]
 
 [dependencies]

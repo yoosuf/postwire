@@ -6,6 +6,9 @@ import { btn } from "../ui";
 import { CheckIcon, InboxIcon, TrashIcon } from "./Icons";
 import type { CheckStatus, ExtractedSignals, MessageAnalysis, MessageDetail } from "../types";
 
+type SnippetLang = "playwright" | "cypress" | "python" | "node";
+
+
 type Tab = "preview" | "html_source" | "text" | "html_check" | "spam" | "headers" | "attachments" | "source";
 type Device = "desktop" | "tablet" | "mobile";
 
@@ -33,6 +36,13 @@ export function MessageView() {
   const [tab, setTab] = useState<Tab>("preview");
   const [device, setDevice] = useState<Device>("desktop");
   const [error, setError] = useState<string | null>(null);
+  const [regexPattern, setRegexPattern] = useState("");
+  const [showSnippet, setShowSnippet] = useState(false);
+  const [snippetLang, setSnippetLang] = useState<SnippetLang>("playwright");
+  const [showReplay, setShowReplay] = useState(false);
+  const [replayUrl, setReplayUrl] = useState("");
+  const [replayResult, setReplayResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [replaying, setReplaying] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -41,6 +51,10 @@ export function MessageView() {
     setAnalysis(null);
     setSource(null);
     setError(null);
+    setRegexPattern("");
+    setShowSnippet(false);
+    setShowReplay(false);
+    setReplayResult(null);
     api
       .get(id)
       .then((d) => {
@@ -108,6 +122,105 @@ export function MessageView() {
     setSelectedId(null);
   }
 
+  async function handleReplay() {
+    if (!replayUrl.trim()) return;
+    setReplaying(true);
+    setReplayResult(null);
+    try {
+      const res = await api.replay(id as string, replayUrl.trim());
+      setReplayResult(res);
+    } catch (e) {
+      setReplayResult({ success: false, message: String(e) });
+    } finally {
+      setReplaying(false);
+    }
+  }
+
+  function buildSnippet(lang: SnippetLang): string {
+    const baseUrl = window.location.origin;
+    const toAddr = detail?.to?.[0] ?? "user@example.com";
+    const subj = detail?.subject ?? "";
+    if (lang === "playwright") {
+      return (
+        "import { test } from '@playwright/test';\n\n" +
+        "test('verify email flow', async ({ page }) => {\n" +
+        "  const since = new Date().toISOString();\n" +
+        "  // 1. Trigger app action that sends the email\n" +
+        "  await page.goto('https://your-app.example.com/signup');\n\n" +
+        "  // 2. Wait for email to arrive\n" +
+        "  const res = await fetch(`" + baseUrl + "/api/wait?" +
+        "to=" + encodeURIComponent(toAddr) +
+        "&subject=" + encodeURIComponent(subj) +
+        "&since=${since}`);\n" +
+        "  const msg = await res.json();\n\n" +
+        "  // 3. Extract OTP / magic link\n" +
+        "  const ext = await fetch(`" + baseUrl + "/api/messages/${msg.id}/extract`).then(r => r.json());\n" +
+        "  const otp = ext.codes[0];\n\n" +
+        "  // 4. Use the OTP\n" +
+        "  await page.fill('#otp-input', otp);\n" +
+        "  await page.click('#verify-btn');\n" +
+        "});"
+      );
+    }
+    if (lang === "cypress") {
+      return (
+        "describe('email flow', () => {\n" +
+        "  it('receives and uses verification code', () => {\n" +
+        "    const since = new Date().toISOString();\n" +
+        "    // Trigger app action first\n" +
+        "    cy.visit('https://your-app.example.com/signup');\n\n" +
+        "    cy.request(`" + baseUrl + "/api/wait?to=" + encodeURIComponent(toAddr) + "&since=${since}`)\n" +
+        "      .its('body').then((msg) => {\n" +
+        "        cy.request(`" + baseUrl + "/api/messages/${msg.id}/extract`)\n" +
+        "          .its('body.codes.0').then((otp) => {\n" +
+        "            cy.get('#otp-input').type(otp);\n" +
+        "            cy.get('#verify-btn').click();\n" +
+        "          });\n" +
+        "      });\n" +
+        "  });\n" +
+        "});"
+      );
+    }
+    if (lang === "python") {
+      return (
+        "import requests\n" +
+        "from datetime import datetime, timezone\n\n" +
+        'BASE = "' + baseUrl + '"\n\n' +
+        "since = datetime.now(timezone.utc).isoformat()\n\n" +
+        "# Trigger your app action here\n\n" +
+        "# Wait for email\n" +
+        "msg = requests.get(f\"{BASE}/api/wait\", params={\n" +
+        '    "to": "' + toAddr + '",\n' +
+        '    "subject": "' + subj + '",\n' +
+        '    "since": since,\n' +
+        '    "timeout_ms": 15000,\n' +
+        "}).json()\n\n" +
+        "# Extract signals\n" +
+        "ext = requests.get(f\"{BASE}/api/messages/{msg['id']}/extract\").json()\n" +
+        "otp = ext['codes'][0] if ext['codes'] else None\n" +
+        "link = ext['links'][0] if ext['links'] else None\n" +
+        "print('OTP:', otp, 'Link:', link)"
+      );
+    }
+    // node
+    return (
+      "const BASE = '" + baseUrl + "';\n\n" +
+      "async function waitForEmail() {\n" +
+      "  const since = new Date().toISOString();\n\n" +
+      "  // Trigger app action here first\n\n" +
+      "  const msg = await fetch(`${BASE}/api/wait?to=" + encodeURIComponent(toAddr) +
+      "&subject=" + encodeURIComponent(subj) + "&since=${since}`)\n" +
+      "    .then(r => r.json());\n\n" +
+      "  const ext = await fetch(`${BASE}/api/messages/${msg.id}/extract`).then(r => r.json());\n" +
+      "  console.log('OTP:', ext.codes[0], 'Link:', ext.links[0]);\n" +
+      "  return ext;\n" +
+      "}\n\n" +
+      "waitForEmail();"
+    );
+  }
+
+
+
   const tabs: [Tab, string, boolean][] = [
     ["preview", "Preview", !!detail.html_body],
     ["html_source", "HTML Source", !!detail.html_body],
@@ -131,24 +244,115 @@ export function MessageView() {
           <dt className="text-zinc-600">To</dt>
           <dd className="truncate">{detail.to.join(", ")}</dd>
         </dl>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <a href={api.rawUrl(id)} className={btn.secondary}>
             Download .eml
           </a>
+          <button
+            onClick={() => { setShowSnippet((v) => !v); setShowReplay(false); }}
+            className={btn.secondary}
+          >
+            {showSnippet ? "Hide Snippet" : "📋 E2E Test Snippet"}
+          </button>
+          <button
+            onClick={() => { setShowReplay((v) => !v); setShowSnippet(false); setReplayResult(null); }}
+            className={btn.secondary}
+          >
+            {showReplay ? "Hide Replay" : "↩ Replay Payload"}
+          </button>
           <button onClick={handleDelete} className={btn.danger}>
             <TrashIcon />
             Delete
           </button>
         </div>
-        {signals && (signals.codes.length > 0 || signals.links.length > 0) && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-900/50 bg-indigo-950/20 px-2.5 py-1.5 text-xs">
-            <span className="font-medium text-indigo-400">Agent signals</span>
-            {signals.codes.map((c) => (
-              <code key={c} className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-200">
-                {c}
-              </code>
+
+        {/* E2E Test Snippet Generator */}
+        {showSnippet && (
+          <div className="mt-3 rounded-lg border border-emerald-900/50 bg-emerald-950/20 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold text-emerald-400">E2E Test Snippet</span>
+              <div className="flex gap-1">
+                {(["playwright", "cypress", "python", "node"] as SnippetLang[]).map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setSnippetLang(l)}
+                    className={`rounded px-2 py-0.5 text-xs capitalize transition-colors ${
+                      snippetLang === l
+                        ? "bg-emerald-700 text-white"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {l === "playwright" ? "Playwright" : l === "cypress" ? "Cypress" : l === "python" ? "Python" : "Node.js"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <pre className="overflow-x-auto rounded bg-zinc-900 p-3 font-mono text-[11px] text-zinc-300 leading-relaxed whitespace-pre-wrap">
+              {buildSnippet(snippetLang)}
+            </pre>
+            <button
+              onClick={() => void navigator.clipboard.writeText(buildSnippet(snippetLang))}
+              className="mt-2 rounded bg-emerald-700/40 px-3 py-1 text-xs text-emerald-300 hover:bg-emerald-700/70"
+            >
+              Copy to clipboard
+            </button>
+          </div>
+        )}
+
+        {/* Replay Payload */}
+        {showReplay && (
+          <div className="mt-3 rounded-lg border border-amber-900/50 bg-amber-950/20 p-3">
+            <span className="text-xs font-semibold text-amber-400">Replay Payload to Endpoint</span>
+            <div className="mt-2 flex gap-2">
+              <input
+                type="url"
+                placeholder="https://your-app.example.com/webhook"
+                value={replayUrl}
+                onChange={(e) => setReplayUrl(e.target.value)}
+                className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 focus:border-amber-500 focus:outline-none"
+              />
+              <button
+                onClick={() => void handleReplay()}
+                disabled={replaying || !replayUrl.trim()}
+                className="rounded bg-amber-700/60 px-3 py-1 text-xs text-amber-100 hover:bg-amber-700/90 disabled:opacity-50"
+              >
+                {replaying ? "Sending…" : "Send"}
+              </button>
+            </div>
+            {replayResult && (
+              <p className={`mt-2 text-xs ${replayResult.success ? "text-emerald-400" : "text-red-400"}`}>
+                {replayResult.message}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="mt-3 rounded-lg border border-indigo-900/50 bg-indigo-950/20 p-2.5 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <span className="font-medium text-indigo-400">Agent Signals & Extraction</span>
+            <input
+              type="text"
+              placeholder="Custom regex (e.g. INVITE-[A-Z0-9]+)..."
+              value={regexPattern}
+              onChange={(e) => {
+                const pat = e.target.value;
+                setRegexPattern(pat);
+                api.extract(id, pat || undefined).then(setSignals).catch(() => {});
+              }}
+              className="w-64 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {signals?.codes.map((c) => (
+              <span key={c} className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[11px] font-mono text-indigo-300 border border-indigo-500/30">
+                OTP: {c}
+              </span>
             ))}
-            {signals.links.map((l) => (
+            {signals?.matches?.map((m) => (
+              <span key={m} className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[11px] font-mono text-emerald-300 border border-emerald-500/30">
+                Match: {m}
+              </span>
+            ))}
+            {signals?.links.map((l) => (
               <a
                 key={l}
                 href={l}
@@ -159,8 +363,11 @@ export function MessageView() {
                 {l}
               </a>
             ))}
+            {(!signals || (signals.codes.length === 0 && (!signals.matches || signals.matches.length === 0) && signals.links.length === 0)) && (
+              <span className="text-zinc-500 italic">No signals extracted automatically</span>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 px-4 pt-2">

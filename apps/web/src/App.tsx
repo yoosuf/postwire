@@ -72,7 +72,7 @@ export default function App() {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm shadow-indigo-950/50">
             <PineTreeIcon width={15} height={15} />
           </div>
-          <h1 className="text-sm font-semibold tracking-tight text-zinc-100">Pine Mail</h1>
+          <h1 className="text-sm font-semibold tracking-tight text-zinc-100">Postwire</h1>
         </div>
 
         {/* Tab Toggle (Emails vs SMS) */}
@@ -148,4 +148,3 @@ export default function App() {
     </div>
   );
 }
-

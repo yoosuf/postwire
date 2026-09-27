@@ -147,10 +147,12 @@ pub fn envelope_display(raw: &[u8], envelope_from: &str, envelope_to: &[String])
 
 /// Codes and links pulled out of a message body — built for agentic e2e tests that
 /// need to grab an OTP or a magic link without hand-rolling regexes of their own.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExtractedSignals {
     pub codes: Vec<String>,
     pub links: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub matches: Vec<String>,
 }
 
 fn code_regex() -> &'static regex::Regex {
@@ -178,7 +180,15 @@ fn strip_tags(html: &str) -> String {
 }
 
 pub fn extract_signals(text: Option<&str>, html: Option<&str>) -> ExtractedSignals {
-    let plain_html = html.map(|h| strip_tags(h)).unwrap_or_default();
+    extract_signals_with_custom_regex(text, html, None)
+}
+
+pub fn extract_signals_with_custom_regex(
+    text: Option<&str>,
+    html: Option<&str>,
+    custom_regex: Option<&str>,
+) -> ExtractedSignals {
+    let plain_html = html.map(strip_tags).unwrap_or_default();
     let haystack = format!("{} {}", text.unwrap_or(""), plain_html);
 
     let mut codes = Vec::new();
@@ -197,6 +207,89 @@ pub fn extract_signals(text: Option<&str>, html: Option<&str>) -> ExtractedSigna
         }
     }
 
-    ExtractedSignals { codes, links }
+    let mut matches = Vec::new();
+    if let Some(pattern) = custom_regex {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            for m in re.find_iter(&haystack) {
+                let s = m.as_str().to_string();
+                if !matches.contains(&s) {
+                    matches.push(s);
+                }
+            }
+        }
+    }
+
+    ExtractedSignals {
+        codes,
+        links,
+        matches,
+    }
 }
 
+/// Builds raw RFC 822 MIME bytes from simple text/html components for vendor API ingestion.
+pub fn build_vendor_mime(
+    from: &str,
+    to: &[String],
+    subject: &str,
+    text: Option<&str>,
+    html: Option<&str>,
+) -> Vec<u8> {
+    let to_header = to.join(", ");
+    let text_content = text.unwrap_or("");
+    let html_content = html.unwrap_or("");
+
+    match (text.is_some(), html.is_some()) {
+        (true, true) => {
+            let boundary = "----postwire_vendor_boundary_12345";
+            let mut mime = format!(
+                "From: {from}\r\nTo: {to_header}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=\"{boundary}\"\r\n\r\n"
+            );
+            mime.push_str(&format!(
+                "--{boundary}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{text_content}\r\n\r\n"
+            ));
+            mime.push_str(&format!(
+                "--{boundary}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n{html_content}\r\n\r\n"
+            ));
+            mime.push_str(&format!("--{boundary}--\r\n"));
+            mime.into_bytes()
+        }
+        (false, true) => {
+            format!(
+                "From: {from}\r\nTo: {to_header}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n{html_content}\r\n"
+            )
+            .into_bytes()
+        }
+        _ => {
+            format!(
+                "From: {from}\r\nTo: {to_header}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{text_content}\r\n"
+            )
+            .into_bytes()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_custom_regex_extraction() {
+        let text = "Welcome! Your invite token is INVITE-998822 and session is SESS-12345";
+        let signals = extract_signals_with_custom_regex(Some(text), None, Some(r"INVITE-[A-Z0-9]+"));
+        assert_eq!(signals.matches, vec!["INVITE-998822"]);
+    }
+
+    #[test]
+    fn test_build_vendor_mime_and_parse() {
+        let raw = build_vendor_mime(
+            "sender@example.com",
+            &["receiver@example.com".to_string()],
+            "Vendor Test",
+            Some("Text body 123456"),
+            Some("<p>HTML body 123456</p>"),
+        );
+        let detail = parse_detail(&raw).unwrap();
+        assert!(detail.text_body.as_deref().unwrap().contains("Text body 123456"));
+        assert!(detail.html_body.as_deref().unwrap().contains("<p>HTML body 123456</p>"));
+    }
+}

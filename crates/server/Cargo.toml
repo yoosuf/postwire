@@ -1,18 +1,22 @@
 [package]
-name = "pinemail-server"
+name = "postwire-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "SMTP mail server (port 1025) + SMS API & Twilio Webhooks + REST API + Web UI (port 8025) for Pine Mail — a tiny, single-binary email & SMS catcher for development, testing, and agentic workflows"
-repository = "https://github.com/yoosuf/pinemail"
+description = "SMTP mail server (port 1025) + SMS API & Twilio Webhooks + REST API + Web UI (port 8025) for Postwire — a tiny, single-binary email & SMS catcher for development, testing, and agentic workflows"
+repository = "https://github.com/yoosuf/postwire"
 keywords = ["mail", "smtp", "sms", "mail-catcher", "sms-catcher", "testing", "agents"]
 
+[lib]
+name = "postwire_server"
+path = "src/lib.rs"
+
 [[bin]]
-name = "pinemail"
+name = "postwire"
 path = "src/main.rs"
 
 [dependencies]
-pinemail-core = { path = "../core" }
+postwire-core = { path = "../core" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 axum = { version = "0.7", features = ["ws"] }
 tower = "0.5"
@@ -29,5 +33,4 @@ mime_guess = "2"
 serde_urlencoded = "0.7"
 rand = "0.8"
 anyhow = "1"
-
-
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

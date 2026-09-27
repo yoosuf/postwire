@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guide for AI coding agents (and human engineers) developing within this repository, as well as AI agents that consume Pine Mail *at runtime* during agentic development and automated e2e testing.
+Guide for AI coding agents (and human engineers) developing within this repository, as well as AI agents that consume Postwire *at runtime* during agentic development and automated e2e testing.
 
 For system internals, memory limits, and sequence diagrams, refer to [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -9,19 +9,19 @@ For system internals, memory limits, and sequence diagrams, refer to [ARCHITECTU
 ## Monorepo Layout & Dependency Model
 
 ```
-pine-mail/
+postwire/
 ├── crates/
-│   ├── core/     pinemail-core   — shared lib: SQLite store, MIME parsing, HTML/spam analysis, signal extraction
-│   ├── server/   pinemail        — SMTP (1025) + HTTP API/UI (8025), main server binary
-│   └── mcp/      pinemail-mcp    — MCP stdio server wrapper around the REST API
+│   ├── core/     postwire-core   — shared lib: SQLite store, MIME parsing, HTML/spam analysis, signal extraction
+│   ├── server/   postwire        — SMTP (1025) + HTTP API/UI (8025), main server binary
+│   └── mcp/      postwire-mcp    — MCP stdio server wrapper around the REST API
 ├── apps/
-│   └── web/                       — React + Vite + TS frontend embedded into `pinemail`
+│   └── web/                       — React + Vite + TS frontend embedded into `postwire`
 ├── Cargo.toml                      — workspace root
 ├── Dockerfile / docker-compose.yml
 └── README.md
 ```
 
-> **Architecture Principle**: `server` and `mcp` both depend on `core` for shared types (`MessageSummary`, `MessageDetail`, `SmsMessage`, `ExtractedSignals`, etc.). `mcp` talks to `server` strictly over HTTP via `PINEMAIL_URL` rather than accessing the SQLite database directly. This ensures the two binaries can run on separate hosts or containers without database file locking issues.
+> **Architecture Principle**: `server` and `mcp` both depend on `core` for shared types (`MessageSummary`, `MessageDetail`, `SmsMessage`, `ExtractedSignals`, etc.). `mcp` talks to `server` strictly over HTTP via `POSTWIRE_URL` rather than accessing the SQLite database directly. `POSTWIRE_URL` remains accepted as a legacy alias. This ensures the two binaries can run on separate hosts or containers without database file locking issues.
 
 ---
 
@@ -30,20 +30,20 @@ pine-mail/
 ```bash
 # Workspace check & builds
 cargo check --workspace
-cargo build --workspace          # Debug builds of pinemail + pinemail-mcp
+cargo build --workspace          # Debug builds of postwire + postwire-mcp (also builds legacy command aliases)
 cargo build --release --workspace
 
 # Frontend build (must precede cargo build if embedding updated web UI)
 cd apps/web && npm install && npm run build
 
 # Run locally
-cargo run -p pinemail-server     # http://localhost:8025, smtp on :1025
-cargo run -p pinemail-mcp        # reads PINEMAIL_URL, talks JSON-RPC over stdio
+cargo run -p postwire-server --bin postwire # http://localhost:8025, smtp on :1025
+cargo run -p postwire-mcp --bin postwire-mcp # reads POSTWIRE_URL, talks JSON-RPC over stdio
 
 # Install pre-built binaries (macOS, Linux, Windows)
-# Homebrew: brew tap yoosuf/tap && brew install pinemail
-# POSIX Shell: curl -fsSL https://raw.githubusercontent.com/yoosuf/pinemail/main/install.sh | sh
-# Windows PowerShell: iwr -useb https://raw.githubusercontent.com/yoosuf/pinemail/main/install.ps1 | iex
+# Homebrew: brew tap yoosuf/tap && brew install postwire
+# POSIX Shell: curl -fsSL https://raw.githubusercontent.com/yoosuf/postwire/main/install.sh | sh
+# Windows PowerShell: iwr -useb https://raw.githubusercontent.com/yoosuf/postwire/main/install.ps1 | iex
 
 # Docker shortcuts
 docker compose up --build                 # Server + SMTP listener
@@ -64,7 +64,7 @@ Never duplicate SQL or parsing logic across `server` or `mcp`.
 
 ## Runtime API for Agentic Email & SMS Discovery
 
-Agents driving end-to-end tests (e.g. signup flows, password resets, SMS 2FA logins, magic-link verification) consume Pine Mail via **REST API** or **MCP Server**.
+Agents driving end-to-end tests (e.g. signup flows, password resets, SMS 2FA logins, magic-link verification) consume Postwire via **REST API** or **MCP Server**.
 
 ### 1. Direct REST API Reference
 
@@ -74,7 +74,7 @@ Agents driving end-to-end tests (e.g. signup flows, password resets, SMS 2FA log
 - `GET /api/messages/:id/raw` — Download raw RFC 822 MIME source (.eml).
 - `GET /api/messages/:id/html` — Render HTML body.
 - `GET /api/messages/:id/attachments/:index` — Download attachment file by index.
-- `GET /api/messages/:id/extract` — Returns `{ codes: string[], links: string[] }` extracted via regex (4-8 digit OTPs, HTTP/HTTPS URLs).
+- `GET /api/messages/:id/extract?regex=` — Returns `{ codes: string[], links: string[], matches?: string[] }` extracted via regex (4-8 digit OTPs, HTTP/HTTPS URLs, or custom regex pattern).
 - `GET /api/messages/:id/analysis` — Returns Litmus-style HTML email-client compatibility checks and heuristic spam score (`{ html: HtmlAnalysis, spam: SpamAnalysis }`).
 - `GET /api/wait?to=&from=&subject=&since=&timeout_ms=` — **Server-side long-polling wait**. Blocks up to `timeout_ms` (default 10s, max 60s) until a matching email arrives, returning `MessageDetail`.
 - `PATCH /api/messages/:id/read` — Toggle read state (`{"read": true}`).
@@ -84,13 +84,21 @@ Agents driving end-to-end tests (e.g. signup flows, password resets, SMS 2FA log
 - `DELETE /api/messages` — Clear all emails.
 - `POST /api/test-email` — Inject a synthetic test email (`{"to": "user@example.com"}`).
 
-#### SMS Endpoints
+#### Vendor Email API Emulators
+- `POST /emails` or `POST /v1/emails` — Ingest email via Resend API format (`{"from": "...", "to": ["..."], "subject": "...", "html": "..."}`).
+- `POST /v3/mail/send` — Ingest email via SendGrid API format (`{"personalizations": [...], "from": {...}, "subject": "...", "content": [...]}`).
+- `POST /email` — Ingest email via Postmark API format (`{"From": "...", "To": "...", "Subject": "...", "HtmlBody": "..."}`).
+
+#### SMS & Webhook Endpoints
 - `GET /api/sms?search=&limit=50&offset=0` — List captured SMS messages.
 - `GET /api/sms/:id` — Fetch single SMS message by ID.
 - `POST /api/sms` — Ingest SMS via JSON (`{"from": "+1555...", "to": "+1800...", "body": "..."}`).
 - `POST /api/sms/webhook` — Ingest SMS via Twilio form-urlencoded or JSON webhooks.
+- `POST /api/webhooks/slack` — Ingest Slack webhook notifications (`{"text": "..."}`).
+- `POST /api/webhooks/discord` — Ingest Discord webhook notifications (`{"content": "..."}`).
+- `POST /api/webhooks/generic` — Ingest generic JSON webhooks (`{"from": "...", "to": "...", "body": "..."}`).
 - `GET /api/sms/wait?to=&from=&body=&since=&timeout_ms=` — **Server-side long-polling wait for SMS**. Blocks until a matching SMS arrives.
-- `GET /api/sms/:id/extract` — Returns `{ codes: string[], links: string[] }` extracted from the SMS body.
+- `GET /api/sms/:id/extract?regex=` — Returns `{ codes: string[], links: string[], matches?: string[] }` extracted from SMS body (including custom regex matches).
 - `PATCH /api/sms/:id/read` — Toggle read state (`{"read": true}`).
 - `DELETE /api/sms/:id` — Delete single SMS.
 - `POST /api/sms/bulk-delete` — Bulk delete SMS (`{"ids": ["id1", "id2"]}`).
@@ -134,9 +142,9 @@ const { codes, links } = await extRes.json();
 
 ---
 
-### 2. MCP Server (`pinemail-mcp`)
+### 2. MCP Server (`postwire-mcp`)
 
-Point your MCP client (Claude Desktop, Copilot, Cursor) at `pinemail-mcp` (stdio transport) with `PINEMAIL_URL` set to the running server.
+Point your MCP client (Claude Desktop, Copilot, Cursor) at `postwire-mcp` (stdio transport) with `POSTWIRE_URL` set to the running server. `POSTWIRE_URL` remains supported for existing clients.
 
 #### Exposed MCP Tools (14 Tools)
 
@@ -160,15 +168,15 @@ Point your MCP client (Claude Desktop, Copilot, Cursor) at `pinemail-mcp` (stdio
 
 #### Runnable E2E Demo Scripts
 
-- **Python (MCP stdio agent flow)**: `examples/mcp_e2e_demo.py` demonstrates launching `pinemail-mcp` over stdio and running a complete test sequence:
+- **Python (MCP stdio agent flow)**: `examples/mcp_e2e_demo.py` demonstrates launching `postwire-mcp` over stdio and running a complete test sequence:
   ```bash
-  cargo build --release -p pinemail-mcp
-  PINEMAIL_URL=http://127.0.0.1:8025 python3 examples/mcp_e2e_demo.py target/release/pinemail-mcp
+  cargo build --release -p postwire-mcp --bin postwire-mcp
+  POSTWIRE_URL=http://127.0.0.1:8025 python3 examples/mcp_e2e_demo.py target/release/postwire-mcp
   ```
 
 - **Node.js (REST API long-polling flow)**: `examples/node_e2e_demo.js` demonstrates long-polling, signal extraction, and cleanup for Email & SMS using native Node 18+ `fetch`:
   ```bash
-  PINEMAIL_URL=http://127.0.0.1:8025 node examples/node_e2e_demo.js
+  POSTWIRE_URL=http://127.0.0.1:8025 node examples/node_e2e_demo.js
   ```
 
 #### Client Configuration Snippet
@@ -176,10 +184,10 @@ Point your MCP client (Claude Desktop, Copilot, Cursor) at `pinemail-mcp` (stdio
 ```json
 {
   "mcpServers": {
-    "pinemail": {
-      "command": "pinemail-mcp",
+    "postwire": {
+      "command": "postwire-mcp",
       "env": {
-        "PINEMAIL_URL": "http://localhost:8025"
+        "POSTWIRE_URL": "http://localhost:8025"
       }
     }
   }

@@ -1,14 +1,14 @@
 [package]
-name = "pinemail-mcp"
+name = "postwire-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "MCP (Model Context Protocol) server connecting AI agents to Pine Mail — enables Claude, Copilot, and Cursor to discover, wait for, and extract data from captured emails and SMS"
-repository = "https://github.com/yoosuf/pinemail"
+description = "MCP (Model Context Protocol) server connecting AI agents to Postwire — enables Claude, Copilot, and Cursor to discover, wait for, and extract data from captured emails and SMS"
+repository = "https://github.com/yoosuf/postwire"
 keywords = ["mcp", "mail", "sms", "agents", "ai", "testing"]
 
 [[bin]]
-name = "pinemail-mcp"
+name = "postwire-mcp"
 path = "src/main.rs"
 
 [dependencies]
